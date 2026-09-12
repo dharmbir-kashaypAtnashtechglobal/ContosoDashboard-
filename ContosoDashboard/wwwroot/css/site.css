@@ -164,3 +164,27 @@ main {
 .content {
     padding-top: 1.1rem;
 }
+
+.document-card {
+    border-left: 4px solid #0078d4;
+}
+
+.document-card .card-footer {
+    border-top: 1px solid rgba(0, 0, 0, 0.05);
+}
+
+.document-share {
+    margin-top: 0.5rem;
+}
+
+.document-share .input-group {
+    width: 100%;
+}
+
+.audit-summary-card {
+    border-left: 4px solid #198754;
+}
+
+.audit-event-item {
+    border-left: 4px solid #6c757d;
+}

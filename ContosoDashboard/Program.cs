@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Data.SqlClient;
 using ContosoDashboard.Data;
 using ContosoDashboard.Services;
 using Microsoft.AspNetCore.Authentication.Cookies;
@@ -43,6 +44,8 @@ builder.Services.AddScoped<ITaskService, TaskService>();
 builder.Services.AddScoped<IProjectService, ProjectService>();
 builder.Services.AddScoped<INotificationService, NotificationService>();
 builder.Services.AddScoped<IDashboardService, DashboardService>();
+builder.Services.AddScoped<IFileStorageService, LocalFileStorageService>();
+builder.Services.AddScoped<IDocumentService, DocumentService>();
 
 // Add HttpContextAccessor for accessing user claims
 builder.Services.AddHttpContextAccessor();
@@ -56,7 +59,24 @@ using (var scope = app.Services.CreateScope())
     try
     {
         var context = services.GetRequiredService<ApplicationDbContext>();
-        context.Database.EnsureCreated(); // For development - use migrations in production
+        var logger = services.GetRequiredService<ILogger<Program>>();
+
+        try
+        {
+            await context.Documents.AnyAsync();
+        }
+        catch (Exception ex)
+        {
+            var sqlException = ex as SqlException ?? ex.InnerException as SqlException;
+            if (sqlException == null || sqlException.Number != 208)
+            {
+                throw;
+            }
+
+            logger.LogWarning(ex, "The existing LocalDB schema is missing document tables. Recreating the database so the document feature can initialize correctly.");
+            context.Database.EnsureDeleted();
+            context.Database.EnsureCreated();
+        }
     }
     catch (Exception ex)
     {
@@ -106,6 +126,25 @@ app.UseAuthentication();
 app.UseAuthorization();
 
 app.MapBlazorHub();
+
+app.MapGet("/api/documents/{documentId:int}", async (int documentId, HttpContext httpContext, IDocumentService documentService, IFileStorageService fileStorageService) =>
+{
+    var userIdClaim = httpContext.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier);
+    if (userIdClaim == null || !int.TryParse(userIdClaim.Value, out var currentUserId))
+    {
+        return Results.Redirect("/login");
+    }
+
+    var document = await documentService.GetDocumentByIdAsync(documentId, currentUserId);
+    if (document == null)
+    {
+        return Results.NotFound();
+    }
+
+    var stream = await fileStorageService.OpenReadAsync(document.StoredFileName);
+    return Results.File(stream, document.ContentType, document.OriginalFileName, enableRangeProcessing: true);
+});
+
 app.MapFallbackToPage("/_Host");
 
 app.Run();

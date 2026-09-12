@@ -1,0 +1,14 @@
+@page "/documents/{documentId:int}/download"
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize]
+@inject NavigationManager NavigationManager
+
+@code {
+    [Parameter]
+    public int DocumentId { get; set; }
+
+    protected override void OnInitialized()
+    {
+        NavigationManager.NavigateTo($"/api/documents/{DocumentId}", forceLoad: true);
+    }
+}

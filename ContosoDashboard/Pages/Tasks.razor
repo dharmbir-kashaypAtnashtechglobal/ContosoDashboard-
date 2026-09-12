@@ -6,6 +6,7 @@
 @attribute [Authorize]
 @inject ITaskService TaskService
 @inject AuthenticationStateProvider AuthenticationStateProvider
+@inject NavigationManager NavigationManager
 
 <PageTitle>My Tasks - ContosoDashboard</PageTitle>
 
@@ -123,8 +124,8 @@
                                 }
                             </td>
                             <td>
-                                <button class="btn btn-sm btn-outline-primary" @onclick="() => ViewTaskDetails(task.TaskId)">
-                                    <i class="bi bi-eye"></i>
+                                <button class="btn btn-sm btn-outline-primary" @onclick="() => ViewTaskDocuments(task.TaskId)">
+                                    <i class="bi bi-file-earmark-text"></i> Docs
                                 </button>
                             </td>
                         </tr>
@@ -185,9 +186,9 @@
         // TODO: Implement modal dialog for creating tasks
     }
 
-    private void ViewTaskDetails(int taskId)
+    private void ViewTaskDocuments(int taskId)
     {
-        // TODO: Navigate to task details or show modal
+        NavigationManager.NavigateTo($"/tasks/{taskId}/documents");
     }
 
     private string GetPriorityColor(TaskPriority priority)

@@ -1,0 +1,106 @@
+@page "/projects/{projectId:int}/documents"
+@using ContosoDashboard.Services
+@using ContosoDashboard.Models
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize]
+@inject IDocumentService DocumentService
+@inject AuthenticationStateProvider AuthenticationStateProvider
+@inject NavigationManager NavigationManager
+
+<PageTitle>Project Documents - ContosoDashboard</PageTitle>
+
+<div class="container-fluid">
+    <div class="row mb-4">
+        <div class="col">
+            <h1>Project Documents</h1>
+        </div>
+    </div>
+
+    <div class="row mb-3">
+        <div class="col-md-6">
+            <input class="form-control" placeholder="Search project documents" @bind="searchText" @bind:event="oninput" />
+        </div>
+        <div class="col-md-3">
+            <button class="btn btn-outline-secondary" @onclick="LoadDocumentsAsync">Search</button>
+        </div>
+    </div>
+
+    @if (documents == null)
+    {
+        <p><em>Loading...</em></p>
+    }
+    else if (!documents.Any())
+    {
+        <div class="alert alert-info">No documents found for this project.</div>
+    }
+    else
+    {
+        <div class="row g-3">
+            @foreach (var document in documents)
+            {
+                <div class="col-md-6 col-xl-4">
+                    <div class="card h-100 document-card">
+                        <div class="card-body">
+                            <div class="d-flex justify-content-between align-items-start mb-2">
+                                <h6 class="card-title mb-0">@document.Title</h6>
+                                <span class="badge bg-secondary">@document.Category</span>
+                            </div>
+                            <p class="text-muted small mb-2">@document.OriginalFileName</p>
+                            <div class="small text-muted">
+                                <div>Uploaded by: @document.Uploader.DisplayName</div>
+                                <div>Uploaded: @document.UploadedDate.ToString("MMM dd, yyyy")</div>
+                            </div>
+                        </div>
+                        <div class="card-footer bg-transparent">
+                            <div class="d-flex flex-wrap gap-2">
+                                <button class="btn btn-sm btn-outline-primary" @onclick="() => PreviewDocument(document.DocumentId)">Preview</button>
+                                <button class="btn btn-sm btn-outline-secondary" @onclick="() => DownloadDocument(document.DocumentId)">Download</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            }
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter]
+    public int ProjectId { get; set; }
+
+    private List<Document>? documents;
+    private int currentUserId;
+    private string searchText = string.Empty;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await AuthenticationStateProvider.GetAuthenticationStateAsync();
+        var user = authState.User;
+        var userIdClaim = user.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier);
+        if (userIdClaim != null && int.TryParse(userIdClaim.Value, out int userId))
+        {
+            currentUserId = userId;
+        }
+
+        await LoadDocumentsAsync();
+    }
+
+    private async Task LoadDocumentsAsync()
+    {
+        documents = await DocumentService.SearchProjectDocumentsAsync(ProjectId, currentUserId, new DocumentQueryOptions
+        {
+            SearchText = searchText,
+            MaxResults = 50
+        });
+    }
+
+    private void PreviewDocument(int documentId)
+    {
+        NavigationManager.NavigateTo($"/documents/{documentId}/preview");
+    }
+
+    private void DownloadDocument(int documentId)
+    {
+        NavigationManager.NavigateTo($"/documents/{documentId}/download");
+    }
+}

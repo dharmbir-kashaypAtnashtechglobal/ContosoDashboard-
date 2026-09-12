@@ -1,0 +1,393 @@
+@page "/documents"
+@using ContosoDashboard.Services
+@using ContosoDashboard.Models
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize]
+@inject IDocumentService DocumentService
+@inject IUserService UserService
+@inject AuthenticationStateProvider AuthenticationStateProvider
+@inject NavigationManager NavigationManager
+
+<PageTitle>Documents - ContosoDashboard</PageTitle>
+
+<div class="container-fluid">
+    <div class="row mb-4 align-items-center">
+        <div class="col">
+            <h1>My Documents</h1>
+        </div>
+    </div>
+
+    @if (errorMessage != null)
+    {
+        <div class="alert alert-danger">@errorMessage</div>
+    }
+
+    @if (successMessage != null)
+    {
+        <div class="alert alert-success">@successMessage</div>
+    }
+
+    @if (replacementDocument != null)
+    {
+        <div class="alert alert-warning">
+            Replacing document: <strong>@replacementDocument.Title</strong>
+        </div>
+    }
+
+    <div class="card mb-4">
+        <div class="card-header">
+            <h5 class="mb-0">@(replacementDocument != null ? "Replace Document" : "Upload Documents")</h5>
+        </div>
+        <div class="card-body">
+            <EditForm Model="uploadRequest" OnValidSubmit="HandleUploadAsync">
+                <DataAnnotationsValidator />
+                <div class="row g-3">
+                    <div class="col-md-6">
+                        <label class="form-label">Title</label>
+                        <InputText class="form-control" @bind-Value="uploadRequest.Title" />
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">Category</label>
+                        <InputSelect class="form-select" @bind-Value="uploadRequest.Category">
+                            @foreach (var category in Enum.GetValues<DocumentCategory>())
+                            {
+                                <option value="@category">@category</option>
+                            }
+                        </InputSelect>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">Project (optional)</label>
+                        <InputNumber class="form-control" @bind-Value="uploadRequest.ProjectId" />
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">Tags (optional)</label>
+                        <InputText class="form-control" @bind-Value="uploadRequest.Tags" />
+                    </div>
+                    <div class="col-12">
+                        <label class="form-label">Description (optional)</label>
+                        <InputTextArea class="form-control" @bind-Value="uploadRequest.Description" />
+                    </div>
+                    <div class="col-12">
+                        <InputFile OnChange="OnFileSelected" multiple />
+                    </div>
+                </div>
+                <div class="mt-3 d-flex gap-2">
+                    <button type="submit" class="btn btn-primary" disabled="@(uploadRequest.FileContent == null || isUploading)">
+                        @(isUploading ? "Uploading..." : (replacementDocument != null ? "Replace Document" : "Upload Document"))
+                    </button>
+                    @if (replacementDocument != null)
+                    {
+                        <button type="button" class="btn btn-outline-secondary" @onclick="CancelReplacement">
+                            Cancel Replacement
+                        </button>
+                    }
+                </div>
+            </EditForm>
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <h5 class="mb-0">Documents</h5>
+            <div class="d-flex gap-2 align-items-center">
+                <input class="form-control" placeholder="Search documents" @bind="searchText" @bind:event="oninput" />
+                <button class="btn btn-outline-secondary" @onclick="ApplyFilters">Search</button>
+            </div>
+        </div>
+        <div class="card-body">
+            <div class="row g-3 mb-3">
+                <div class="col-md-3">
+                    <label class="form-label">Category</label>
+                    <select class="form-select" @bind="filterOptions.Category">
+                        <option value="">All</option>
+                        @foreach (var category in Enum.GetValues<DocumentCategory>())
+                        {
+                            <option value="@category">@category</option>
+                        }
+                    </select>
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label">Project</label>
+                    <InputNumber class="form-control" @bind-Value="filterOptions.ProjectId" />
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label">Uploaded from</label>
+                    <InputDate class="form-control" @bind-Value="filterOptions.FromDate" />
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label">Uploaded to</label>
+                    <InputDate class="form-control" @bind-Value="filterOptions.ToDate" />
+                </div>
+            </div>
+            <div class="d-flex justify-content-between align-items-center mb-3">
+                <div class="text-muted small">
+                    Showing up to @Math.Min(documents?.Count ?? 0, filterOptions.MaxResults ?? 50) results
+                </div>
+                <div class="d-flex gap-2 align-items-center">
+                    <label class="form-label mb-0">Sort</label>
+                    <select class="form-select" @bind="filterOptions.SortBy">
+                        <option value="UploadedDate">Uploaded Date</option>
+                        <option value="Title">Title</option>
+                        <option value="Category">Category</option>
+                    </select>
+                </div>
+            </div>
+            @if (documents == null)
+            {
+                <p><em>Loading...</em></p>
+            }
+            else if (!documents.Any())
+            {
+                <div class="alert alert-info">No documents found.</div>
+            }
+            else
+            {
+                <div class="row g-3">
+                    @foreach (var document in documents)
+                    {
+                        <div class="col-md-6 col-xl-4">
+                            <div class="card h-100 document-card">
+                                <div class="card-body">
+                                    <div class="d-flex justify-content-between align-items-start mb-2">
+                                        <h6 class="card-title mb-0">@document.Title</h6>
+                                        <span class="badge bg-secondary">@document.Category</span>
+                                    </div>
+
+                                    <p class="text-muted small mb-2">
+                                        @document.OriginalFileName
+                                    </p>
+
+                                    @if (!string.IsNullOrWhiteSpace(document.Description))
+                                    {
+                                        <p class="small mb-2">@document.Description</p>
+                                    }
+
+                                    <div class="small text-muted mb-2">
+                                        <div>Uploaded: @document.UploadedDate.ToString("MMM dd, yyyy")</div>
+                                        <div>Uploaded by: @document.Uploader.DisplayName</div>
+                                        @if (document.Project != null)
+                                        {
+                                            <div>Project: @document.Project.Name</div>
+                                        }
+                                        @if (!string.IsNullOrWhiteSpace(document.Tags))
+                                        {
+                                            <div>Tags: @document.Tags</div>
+                                        }
+                                    </div>
+                                </div>
+                                <div class="card-footer bg-transparent">
+                                    <div class="d-flex flex-wrap gap-2">
+                                        <button class="btn btn-sm btn-outline-primary" @onclick="() => PreviewDocument(document.DocumentId)">Preview</button>
+                                        <button class="btn btn-sm btn-outline-secondary" @onclick="() => DownloadDocument(document.DocumentId)">Download</button>
+                                        <button class="btn btn-sm btn-outline-warning" @onclick="() => PrepareReplacement(document)">Replace</button>
+                                        <button class="btn btn-sm btn-outline-danger" @onclick="() => DeleteDocument(document.DocumentId)">Delete</button>
+                                    </div>
+
+                                    <div class="document-share mt-2">
+                                        <div class="input-group input-group-sm">
+                                            <select class="form-select" value="@GetSelectedShareUserId(document.DocumentId)" @onchange="e => SetShareUserId(document.DocumentId, e.Value)">
+                                                <option value="0">Select teammate to share</option>
+                                                @foreach (var user in allUsers.Where(u => u.UserId != currentUserId))
+                                                {
+                                                    <option value="@user.UserId">@user.DisplayName</option>
+                                                }
+                                            </select>
+                                            <button class="btn btn-outline-success" @onclick="() => ShareDocument(document.DocumentId)">Share</button>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    }
+                </div>
+            }
+        </div>
+    </div>
+</div>
+
+@code {
+    private List<Document>? documents;
+    private List<User> allUsers = new();
+    private Dictionary<int, int> shareSelectedUserIds = new();
+    private Document? replacementDocument;
+    private string? errorMessage;
+    private string? successMessage;
+    private string searchText = string.Empty;
+    private bool isUploading;
+    private int currentUserId;
+    private DocumentUploadRequest uploadRequest = new();
+    private DocumentQueryOptions filterOptions = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await AuthenticationStateProvider.GetAuthenticationStateAsync();
+        var user = authState.User;
+        var userIdClaim = user.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier);
+        if (userIdClaim != null && int.TryParse(userIdClaim.Value, out int userId))
+        {
+            currentUserId = userId;
+        }
+
+        allUsers = await UserService.GetAllUsersAsync();
+        await LoadDocumentsAsync();
+    }
+
+    private async Task LoadDocumentsAsync()
+    {
+        filterOptions.SearchText = searchText;
+        documents = await DocumentService.SearchDocumentsAsync(currentUserId, filterOptions);
+    }
+
+    private async Task ApplyFilters()
+    {
+        await LoadDocumentsAsync();
+    }
+
+    private async Task OnFileSelected(InputFileChangeEventArgs e)
+    {
+        var selectedFile = e.File;
+        if (selectedFile == null)
+        {
+            return;
+        }
+
+        uploadRequest.OriginalFileName = selectedFile.Name;
+        uploadRequest.ContentType = selectedFile.ContentType;
+        uploadRequest.FileContent = new MemoryStream();
+
+        await selectedFile.OpenReadStream(25 * 1024 * 1024)
+            .CopyToAsync(uploadRequest.FileContent);
+
+        uploadRequest.FileContent.Position = 0;
+    }
+
+    private async Task HandleUploadAsync()
+    {
+        try
+        {
+            isUploading = true;
+            errorMessage = null;
+            successMessage = null;
+
+            if (replacementDocument != null)
+            {
+                if (uploadRequest.FileContent == null || uploadRequest.FileContent.Length == 0)
+                {
+                    throw new InvalidOperationException("Please select a replacement file.");
+                }
+
+                var updated = await DocumentService.ReplaceDocumentAsync(replacementDocument.DocumentId, currentUserId, uploadRequest);
+                if (updated == null)
+                {
+                    throw new InvalidOperationException("You are not authorized to replace this document.");
+                }
+
+                successMessage = "Document replaced successfully.";
+            }
+            else
+            {
+                await DocumentService.UploadDocumentAsync(uploadRequest, currentUserId);
+                successMessage = "Document uploaded successfully.";
+            }
+
+            uploadRequest = new DocumentUploadRequest();
+            replacementDocument = null;
+            await LoadDocumentsAsync();
+        }
+        catch (Exception ex)
+        {
+            errorMessage = ex.Message;
+        }
+        finally
+        {
+            isUploading = false;
+        }
+    }
+
+    private void PrepareReplacement(Document document)
+    {
+        replacementDocument = document;
+        uploadRequest = new DocumentUploadRequest
+        {
+            Title = document.Title,
+            Category = document.Category,
+            Description = document.Description,
+            Tags = document.Tags,
+            ProjectId = document.ProjectId,
+            OriginalFileName = document.OriginalFileName
+        };
+        errorMessage = null;
+        successMessage = null;
+    }
+
+    private void CancelReplacement()
+    {
+        replacementDocument = null;
+        uploadRequest = new DocumentUploadRequest();
+    }
+
+    private async Task DeleteDocument(int documentId)
+    {
+        var result = await DocumentService.DeleteDocumentAsync(documentId, currentUserId);
+        if (result)
+        {
+            successMessage = "Document deleted successfully.";
+            if (replacementDocument != null && replacementDocument.DocumentId == documentId)
+            {
+                replacementDocument = null;
+                uploadRequest = new DocumentUploadRequest();
+            }
+
+            await LoadDocumentsAsync();
+        }
+        else
+        {
+            errorMessage = "You are not authorized to delete this document.";
+        }
+    }
+
+    private async Task ShareDocument(int documentId)
+    {
+        var recipientId = GetSelectedShareUserId(documentId);
+        if (recipientId <= 0)
+        {
+            errorMessage = "Please select a teammate before sharing the document.";
+            return;
+        }
+
+        var result = await DocumentService.ShareDocumentAsync(documentId, recipientId, currentUserId);
+        if (result)
+        {
+            successMessage = "Document shared successfully.";
+            shareSelectedUserIds.Remove(documentId);
+            await LoadDocumentsAsync();
+        }
+        else
+        {
+            errorMessage = "The document could not be shared with the selected user.";
+        }
+    }
+
+    private int GetSelectedShareUserId(int documentId)
+    {
+        return shareSelectedUserIds.TryGetValue(documentId, out var userId) ? userId : 0;
+    }
+
+    private void SetShareUserId(int documentId, object? value)
+    {
+        if (int.TryParse(value?.ToString(), out var userId))
+        {
+            shareSelectedUserIds[documentId] = userId;
+        }
+    }
+
+    private void PreviewDocument(int documentId)
+    {
+        NavigationManager.NavigateTo($"/documents/{documentId}/preview");
+    }
+
+    private void DownloadDocument(int documentId)
+    {
+        NavigationManager.NavigateTo($"/documents/{documentId}/download");
+    }
+}

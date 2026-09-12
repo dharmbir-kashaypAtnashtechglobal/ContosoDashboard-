@@ -1,0 +1,201 @@
+@page "/tasks/{taskId:int}/documents"
+@using ContosoDashboard.Services
+@using ContosoDashboard.Models
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize]
+@inject IDocumentService DocumentService
+@inject ITaskService TaskService
+@inject AuthenticationStateProvider AuthenticationStateProvider
+@inject NavigationManager NavigationManager
+
+<PageTitle>Task Documents - ContosoDashboard</PageTitle>
+
+<div class="container-fluid">
+    <div class="row mb-4">
+        <div class="col">
+            <h1>Task Documents</h1>
+        </div>
+    </div>
+
+    @if (errorMessage != null)
+    {
+        <div class="alert alert-danger">@errorMessage</div>
+    }
+
+    @if (task == null)
+    {
+        <p><em>Loading...</em></p>
+    }
+    else
+    {
+        <div class="card mb-4">
+            <div class="card-header">
+                <h5 class="mb-0">@task.Title</h5>
+            </div>
+            <div class="card-body">
+                <p class="text-muted mb-0">@task.Description</p>
+            </div>
+        </div>
+
+        <div class="card mb-4">
+            <div class="card-header">
+                <h5 class="mb-0">Attach Existing Documents</h5>
+            </div>
+            <div class="card-body">
+                @if (availableDocuments == null)
+                {
+                    <p><em>Loading available documents...</em></p>
+                }
+                else if (!availableDocuments.Any())
+                {
+                    <div class="alert alert-info">No documents are currently available to attach.</div>
+                }
+                else
+                {
+                    <div class="row g-3">
+                        @foreach (var document in availableDocuments)
+                        {
+                            <div class="col-md-6 col-xl-4">
+                                <div class="card h-100">
+                                    <div class="card-body">
+                                        <div class="d-flex justify-content-between align-items-start mb-2">
+                                            <h6 class="card-title mb-0">@document.Title</h6>
+                                            <span class="badge bg-secondary">@document.Category</span>
+                                        </div>
+                                        <p class="text-muted small mb-2">@document.OriginalFileName</p>
+                                        <div class="small text-muted">
+                                            <div>Uploaded by: @document.Uploader.DisplayName</div>
+                                            <div>Uploaded: @document.UploadedDate.ToString("MMM dd, yyyy")</div>
+                                        </div>
+                                    </div>
+                                    <div class="card-footer bg-transparent">
+                                        <div class="d-flex gap-2">
+                                            <button class="btn btn-sm btn-outline-primary" @onclick="() => PreviewDocument(document.DocumentId)">Preview</button>
+                                            <button class="btn btn-sm btn-outline-secondary" @onclick="() => DownloadDocument(document.DocumentId)">Download</button>
+                                            <button class="btn btn-sm btn-primary" @onclick="() => AttachDocumentAsync(document.DocumentId)">Attach</button>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        }
+                    </div>
+                }
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">Attached Documents</h5>
+            </div>
+            <div class="card-body">
+                @if (attachedDocuments == null)
+                {
+                    <p><em>Loading attached documents...</em></p>
+                }
+                else if (!attachedDocuments.Any())
+                {
+                    <div class="alert alert-info">No documents have been attached to this task yet.</div>
+                }
+                else
+                {
+                    <div class="row g-3">
+                        @foreach (var document in attachedDocuments)
+                        {
+                            <div class="col-md-6 col-xl-4">
+                                <div class="card h-100">
+                                    <div class="card-body">
+                                        <div class="d-flex justify-content-between align-items-start mb-2">
+                                            <h6 class="card-title mb-0">@document.Title</h6>
+                                            <span class="badge bg-secondary">@document.Category</span>
+                                        </div>
+                                        <p class="text-muted small mb-2">@document.OriginalFileName</p>
+                                        <div class="small text-muted">
+                                            <div>Uploaded: @document.UploadedDate.ToString("MMM dd, yyyy")</div>
+                                            <div>Uploaded by: @document.Uploader.DisplayName</div>
+                                        </div>
+                                    </div>
+                                    <div class="card-footer bg-transparent">
+                                        <div class="d-flex gap-2">
+                                            <button class="btn btn-sm btn-outline-primary" @onclick="() => PreviewDocument(document.DocumentId)">Preview</button>
+                                            <button class="btn btn-sm btn-outline-secondary" @onclick="() => DownloadDocument(document.DocumentId)">Download</button>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        }
+                    </div>
+                }
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter]
+    public int TaskId { get; set; }
+
+    private TaskItem? task;
+    private List<Document>? availableDocuments;
+    private List<Document>? attachedDocuments;
+    private string? errorMessage;
+    private int currentUserId;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await AuthenticationStateProvider.GetAuthenticationStateAsync();
+        var user = authState.User;
+        var userIdClaim = user.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier);
+        if (userIdClaim != null && int.TryParse(userIdClaim.Value, out int userId))
+        {
+            currentUserId = userId;
+        }
+
+        await LoadDocumentsAsync();
+    }
+
+    private async Task LoadDocumentsAsync()
+    {
+        errorMessage = null;
+
+        task = await TaskService.GetTaskByIdAsync(TaskId, currentUserId);
+        if (task == null)
+        {
+            errorMessage = "You are not authorized to view this task’s documents.";
+            return;
+        }
+
+        attachedDocuments = await DocumentService.GetTaskDocumentsAsync(TaskId, currentUserId);
+
+        var allDocuments = await DocumentService.SearchDocumentsAsync(currentUserId, new DocumentQueryOptions
+        {
+            MaxResults = 100
+        });
+
+        availableDocuments = allDocuments
+            .Where(d => attachedDocuments.All(ad => ad.DocumentId != d.DocumentId))
+            .OrderByDescending(d => d.UploadedDate)
+            .ToList();
+    }
+
+    private async Task AttachDocumentAsync(int documentId)
+    {
+        var attached = await DocumentService.AttachDocumentToTaskAsync(TaskId, documentId, currentUserId);
+        if (!attached)
+        {
+            errorMessage = "The selected document could not be attached to this task.";
+            return;
+        }
+
+        await LoadDocumentsAsync();
+    }
+
+    private void PreviewDocument(int documentId)
+    {
+        NavigationManager.NavigateTo($"/documents/{documentId}/preview");
+    }
+
+    private void DownloadDocument(int documentId)
+    {
+        NavigationManager.NavigateTo($"/documents/{documentId}/download");
+    }
+}

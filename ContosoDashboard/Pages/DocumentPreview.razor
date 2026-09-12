@@ -1,0 +1,75 @@
+@page "/documents/{documentId:int}/preview"
+@using ContosoDashboard.Services
+@using ContosoDashboard.Models
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize]
+@inject IDocumentService DocumentService
+@inject AuthenticationStateProvider AuthenticationStateProvider
+@inject NavigationManager NavigationManager
+
+<PageTitle>Document Preview - ContosoDashboard</PageTitle>
+
+@if (document == null)
+{
+    <p><em>Loading...</em></p>
+}
+else
+{
+    <div class="container-fluid">
+        <div class="row mb-3">
+            <div class="col">
+                <h1>@document.Title</h1>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-body">
+                <p><strong>File:</strong> @document.OriginalFileName</p>
+                <p><strong>Category:</strong> @document.Category</p>
+                <p><strong>Uploaded by:</strong> @document.Uploader.DisplayName</p>
+
+                @if (IsPreviewable(document.ContentType))
+                {
+                    <iframe src="/documents/@document.DocumentId/download" style="width:100%; height: 700px; border: none;"></iframe>
+                }
+                else
+                {
+                    <div class="alert alert-warning">
+                        This file type does not support in-browser preview, but it can be downloaded.
+                    </div>
+                }
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter]
+    public int DocumentId { get; set; }
+
+    private Document? document;
+    private int currentUserId;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await AuthenticationStateProvider.GetAuthenticationStateAsync();
+        var user = authState.User;
+        var userIdClaim = user.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier);
+        if (userIdClaim != null && int.TryParse(userIdClaim.Value, out int userId))
+        {
+            currentUserId = userId;
+        }
+
+        document = await DocumentService.GetDocumentByIdAsync(DocumentId, currentUserId);
+        if (document == null)
+        {
+            NavigationManager.NavigateTo("/documents");
+        }
+    }
+
+    private static bool IsPreviewable(string contentType)
+    {
+        return contentType.Contains("pdf", StringComparison.OrdinalIgnoreCase) ||
+               contentType.Contains("image", StringComparison.OrdinalIgnoreCase);
+    }
+}

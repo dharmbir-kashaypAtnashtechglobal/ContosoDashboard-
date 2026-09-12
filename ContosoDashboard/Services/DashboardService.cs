@@ -8,15 +8,18 @@ public interface IDashboardService
 {
     Task<DashboardSummary> GetDashboardSummaryAsync(int userId);
     Task<List<Announcement>> GetActiveAnnouncementsAsync();
+    Task<List<RecentDocumentSummary>> GetRecentDocumentsAsync(int userId, int maxResults = 5);
 }
 
 public class DashboardService : IDashboardService
 {
     private readonly ApplicationDbContext _context;
+    private readonly IDocumentService _documentService;
 
-    public DashboardService(ApplicationDbContext context)
+    public DashboardService(ApplicationDbContext context, IDocumentService documentService)
     {
         _context = context;
+        _documentService = documentService;
     }
 
     public async Task<DashboardSummary> GetDashboardSummaryAsync(int userId)
@@ -59,6 +62,24 @@ public class DashboardService : IDashboardService
             .Take(5)
             .ToListAsync();
     }
+
+    public async Task<List<RecentDocumentSummary>> GetRecentDocumentsAsync(int userId, int maxResults = 5)
+    {
+        var documents = await _documentService.GetRecentDocumentsAsync(userId, maxResults);
+
+        return documents
+            .Select(d => new RecentDocumentSummary
+            {
+                DocumentId = d.DocumentId,
+                Title = d.Title,
+                OriginalFileName = d.OriginalFileName,
+                Category = d.Category,
+                UploadedDate = d.UploadedDate,
+                UploadedBy = d.Uploader?.DisplayName ?? "Unknown",
+                ProjectName = d.Project?.Name
+            })
+            .ToList();
+    }
 }
 
 public class DashboardSummary
@@ -67,4 +88,15 @@ public class DashboardSummary
     public int TasksDueToday { get; set; }
     public int ActiveProjects { get; set; }
     public int UnreadNotifications { get; set; }
+}
+
+public class RecentDocumentSummary
+{
+    public int DocumentId { get; set; }
+    public string Title { get; set; } = string.Empty;
+    public string OriginalFileName { get; set; } = string.Empty;
+    public DocumentCategory Category { get; set; }
+    public DateTime UploadedDate { get; set; }
+    public string UploadedBy { get; set; } = string.Empty;
+    public string? ProjectName { get; set; }
 }

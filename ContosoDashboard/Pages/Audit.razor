@@ -1,0 +1,232 @@
+@page "/audit"
+@using ContosoDashboard.Services
+@using ContosoDashboard.Models
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize(Roles = "Administrator")]
+@inject IDocumentService DocumentService
+@inject AuthenticationStateProvider AuthenticationStateProvider
+
+<PageTitle>Audit & Reporting - ContosoDashboard</PageTitle>
+
+<div class="container-fluid">
+    <div class="row mb-4">
+        <div class="col">
+            <h1>Audit & Reporting</h1>
+            <p class="text-muted">Administrative review of document activity across the workspace.</p>
+        </div>
+    </div>
+
+    @if (isLoading)
+    {
+        <p><em>Loading audits...</em></p>
+    }
+    else if (!isAdmin)
+    {
+        <div class="alert alert-warning">You must be an administrator to view the audit log.</div>
+    }
+    else
+    {
+        <div class="row g-3 mb-4">
+            <div class="col-md-3">
+                <div class="card audit-summary-card h-100">
+                    <div class="card-body">
+                        <h6 class="text-muted">Total Events</h6>
+                        <div class="display-6">@auditEvents.Count</div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card audit-summary-card h-100">
+                    <div class="card-body">
+                        <h6 class="text-muted">Uploads</h6>
+                        <div class="display-6 text-primary">@uploadCount</div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card audit-summary-card h-100">
+                    <div class="card-body">
+                        <h6 class="text-muted">Shares</h6>
+                        <div class="display-6 text-success">@shareCount</div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card audit-summary-card h-100">
+                    <div class="card-body">
+                        <h6 class="text-muted">Active Uploaders</h6>
+                        <div class="display-6 text-warning">@activeUploaderCount</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="row g-4 mb-4">
+            <div class="col-md-6">
+                <div class="card h-100">
+                    <div class="card-header">
+                        <h5 class="mb-0">Popular Document Types</h5>
+                    </div>
+                    <div class="card-body">
+                        @if (topCategories.Any())
+                        {
+                            <ul class="list-group list-group-flush">
+                                @foreach (var category in topCategories)
+                                {
+                                    <li class="list-group-item d-flex justify-content-between align-items-center">
+                                        <span>@category.Category</span>
+                                        <span class="badge bg-secondary">@category.Count</span>
+                                    </li>
+                                }
+                            </ul>
+                        }
+                        else
+                        {
+                            <p class="text-muted mb-0">No document activity recorded yet.</p>
+                        }
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-md-6">
+                <div class="card h-100">
+                    <div class="card-header">
+                        <h5 class="mb-0">Top Uploaders</h5>
+                    </div>
+                    <div class="card-body">
+                        @if (topUploaders.Any())
+                        {
+                            <ul class="list-group list-group-flush">
+                                @foreach (var uploader in topUploaders)
+                                {
+                                    <li class="list-group-item d-flex justify-content-between align-items-center">
+                                        <span>@uploader.DisplayName</span>
+                                        <span class="badge bg-primary">@uploader.Count</span>
+                                    </li>
+                                }
+                            </ul>
+                        }
+                        else
+                        {
+                            <p class="text-muted mb-0">No uploader activity recorded yet.</p>
+                        }
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">Recent Activity</h5>
+            </div>
+            <div class="card-body">
+                @if (!auditEvents.Any())
+                {
+                    <div class="alert alert-info">No document audit events have been recorded yet.</div>
+                }
+                else
+                {
+                    <div class="list-group">
+                        @foreach (var auditEvent in auditEvents)
+                        {
+                            <div class="list-group-item audit-event-item">
+                                <div class="d-flex justify-content-between">
+                                    <div>
+                                        <div class="fw-bold">@auditEvent.EventType</div>
+                                        <div class="small text-muted">@auditEvent.Details</div>
+                                    </div>
+                                    <div class="text-end small text-muted">
+                                        <div>@auditEvent.EventDate.ToString("MMM dd, yyyy")</div>
+                                        <div>@auditEvent.User.DisplayName</div>
+                                    </div>
+                                </div>
+                            </div>
+                        }
+                    </div>
+                }
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    private List<AuditEvent> auditEvents = new();
+    private List<CategorySummary> topCategories = new();
+    private List<UploaderSummary> topUploaders = new();
+    private bool isLoading = true;
+    private bool isAdmin = false;
+    private int currentUserId;
+    private int uploadCount;
+    private int shareCount;
+    private int activeUploaderCount;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await AuthenticationStateProvider.GetAuthenticationStateAsync();
+        var user = authState.User;
+        var userIdClaim = user.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier);
+        if (userIdClaim != null && int.TryParse(userIdClaim.Value, out int userId))
+        {
+            currentUserId = userId;
+        }
+
+        isAdmin = authState.User.IsInRole("Administrator");
+        if (!isAdmin)
+        {
+            isLoading = false;
+            return;
+        }
+
+        auditEvents = await DocumentService.GetAuditEventsAsync(currentUserId);
+
+        uploadCount = auditEvents.Count(e => e.EventType.Equals("Upload", StringComparison.OrdinalIgnoreCase));
+        shareCount = auditEvents.Count(e => e.EventType.Equals("Share", StringComparison.OrdinalIgnoreCase));
+        activeUploaderCount = auditEvents
+            .Where(e => e.User != null)
+            .Select(e => e.UserId)
+            .Distinct()
+            .Count();
+
+        topCategories = auditEvents
+            .Where(e => e.Document != null)
+            .GroupBy(e => e.Document.Category)
+            .Select(g => new CategorySummary
+            {
+                Category = g.Key,
+                Count = g.Count()
+            })
+            .OrderByDescending(x => x.Count)
+            .ThenBy(x => x.Category)
+            .Take(5)
+            .ToList();
+
+        topUploaders = auditEvents
+            .Where(e => e.User != null)
+            .GroupBy(e => new { e.UserId, e.User.DisplayName })
+            .Select(g => new UploaderSummary
+            {
+                UserId = g.Key.UserId,
+                DisplayName = g.Key.DisplayName,
+                Count = g.Count()
+            })
+            .OrderByDescending(x => x.Count)
+            .ThenBy(x => x.DisplayName)
+            .Take(5)
+            .ToList();
+
+        isLoading = false;
+    }
+
+    private class CategorySummary
+    {
+        public DocumentCategory Category { get; set; }
+        public int Count { get; set; }
+    }
+
+    private class UploaderSummary
+    {
+        public int UserId { get; set; }
+        public string DisplayName { get; set; } = string.Empty;
+        public int Count { get; set; }
+    }
+}
